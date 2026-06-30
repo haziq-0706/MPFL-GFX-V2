@@ -2,7 +2,16 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { BroadcastState } from "@/lib/supabase/types";
+import CountdownGraphic from "@/components/overlays/CountdownGraphic";
+import MatchIdGraphic from "@/components/overlays/MatchIdGraphic";
+import StandingsGraphic from "@/components/overlays/StandingsGraphic";
+import CircuitGraphic from "@/components/overlays/CircuitGraphic";
+import LineupGraphic from "@/components/overlays/LineupGraphic";
+import { DEFAULT_STANDINGS } from "@/lib/data/teams";
+import type {
+  BroadcastState, OverlayType,
+  CountdownData, MatchIdData, TableData, CircuitData, LineupData,
+} from "@/lib/supabase/types";
 
 // ── Typography helpers ──────────────────────────────────────────────────────
 const D: React.CSSProperties = {
@@ -10,6 +19,158 @@ const D: React.CSSProperties = {
   fontStyle: "italic",
   textTransform: "uppercase",
 };
+
+// ── Default preview data per overlay type ──────────────────────────────────
+// Lazy-initialised so target_time is correct at mount, not module load.
+function makeDefaultOverlayData() {
+  const t = typeof window !== "undefined" ? Date.now() : 0;
+  const countdown: CountdownData = {
+    target_time: t + 15 * 60 * 1000,
+    label: "KICK-OFF IN",
+    home_code: "JDT", away_code: "SEL",
+    competition: "MPFL 2026", venue: "STADIUM JDT",
+    match_date: "SAT 14 FEB", kickoff_time: "20:00 MYT",
+  };
+  const matchid: MatchIdData = {
+    home_code: "JDT", away_code: "SEL",
+    competition: "MPFL 2026 · CIRCUIT 1", matchday: "MATCHDAY 1",
+    venue: "Stadium JDT", match_date: "SAT 14 FEB", kickoff: "20:00 MYT",
+  };
+  const table: TableData = {
+    title: "STANDINGS", season: "MPFL 2026 · LEAGUE",
+    rows: DEFAULT_STANDINGS as TableData["rows"],
+  };
+  const circuit: CircuitData = {
+    round: "CIRCUIT 1", venue: "STADIUM MPFL",
+    date_range: "SAT-SUN · 14-15 FEB 2026",
+    games: [
+      { home_code: "JDT", away_code: "SEL", home_score: 3, away_score: 1, status: "ft",      court: "COURT 1" },
+      { home_code: "PFA", away_code: "KLC", status: "live", live_minute: "18",              court: "COURT 2" },
+      { home_code: "PAH", away_code: "ATM", status: "upcoming", time: "21:00",              court: "COURT 1" },
+      { home_code: "TRG", away_code: "USM", status: "upcoming", time: "21:30",              court: "COURT 2" },
+    ],
+  };
+  const lineup: LineupData = {
+    team_code: "JDT",
+    players: [
+      { number: 1,  name: "HAZWAN BAKRI",  position: "GK" },
+      { number: 10, name: "SAFIQ RAHIM",   position: "ALA" },
+      { number: 7,  name: "SAFAWI RASID",  position: "ALA" },
+      { number: 9,  name: "NORSHAHRUL",    position: "PIVO" },
+      { number: 5,  name: "KHYRIL MUHYMN", position: "FIXO" },
+    ],
+    revealed: 5,
+  };
+  return { countdown, matchid, table, circuit, lineup } as const;
+}
+
+type OverlayDataMap = ReturnType<typeof makeDefaultOverlayData>;
+
+// Maps sidebar panel ID → overlay type (panels with no graphic return undefined)
+const PANEL_TO_OVERLAY: Partial<Record<string, OverlayType>> = {
+  countdown:       "countdown",
+  matchid:         "matchid",
+  table:           "table",
+  schedule:        "circuit",
+  "player-photos": "lineup",
+};
+
+// Mirrors output page's renderOverlay — same switch, same casts
+function renderGraphic(overlay: OverlayType, data: unknown) {
+  const d = data as Record<string, unknown>;
+  switch (overlay) {
+    case "countdown": return <CountdownGraphic data={d as unknown as CountdownData} />;
+    case "matchid":   return <MatchIdGraphic   data={d as unknown as MatchIdData}   />;
+    case "table":     return <StandingsGraphic data={d as unknown as TableData}     />;
+    case "circuit":   return <CircuitGraphic   data={d as unknown as CircuitData}   />;
+    case "lineup":    return <LineupGraphic    data={d as unknown as LineupData}    />;
+    default:          return null;
+  }
+}
+
+// ── Scaled monitor ──────────────────────────────────────────────────────────
+// Renders a 1920×1080 graphic shrunk to fill a 16:9 container.
+function ScaledMonitor({
+  overlay, data, label, isProgram = false,
+}: {
+  overlay: OverlayType;
+  data: unknown;
+  label: string;
+  isProgram?: boolean;
+}) {
+  const frameRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(0.25);
+
+  useEffect(() => {
+    const el = frameRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      if (el.offsetWidth > 0) setScale(el.offsetWidth / 1920);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const hasContent = !!overlay;
+  const showGreen  = isProgram && hasContent;
+
+  return (
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+      {/* Label */}
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <div style={{
+          width: 5, height: 5, borderRadius: "50%",
+          background: showGreen ? "#00C853" : "#252525",
+          animation: showGreen ? "livePulse 1.2s ease-in-out infinite" : "none",
+        }}/>
+        <span style={{
+          fontSize: 9, fontWeight: 700, letterSpacing: "0.26em",
+          color: showGreen ? "#00C853" : "#2E2E2E",
+        }}>{label}</span>
+        {hasContent && (
+          <span style={{
+            fontSize: 9, color: "#2A2A2A", letterSpacing: "0.12em", marginLeft: "auto",
+            fontFamily: "'Inter', sans-serif",
+          }}>
+            {overlay?.toUpperCase()}
+          </span>
+        )}
+      </div>
+
+      {/* Monitor frame — aspect-ratio keeps it 16:9 */}
+      <div
+        ref={frameRef}
+        style={{
+          position: "relative",
+          aspectRatio: "16 / 9",
+          background: "#000",
+          border: `1px solid ${showGreen ? "rgba(0,200,83,0.22)" : "#111"}`,
+          overflow: "hidden",
+        }}
+      >
+        {hasContent ? (
+          <div style={{
+            position: "absolute", top: 0, left: 0,
+            width: 1920, height: 1080,
+            transform: `scale(${scale})`,
+            transformOrigin: "top left",
+          }}>
+            {renderGraphic(overlay, data)}
+          </div>
+        ) : (
+          <div style={{
+            position: "absolute", inset: 0,
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <span style={{ fontSize: 10, color: "#161616", letterSpacing: "0.22em", fontWeight: 600 }}>
+              {isProgram ? "NO GRAPHICS ON AIR" : "SELECT A GRAPHIC"}
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 // ── Panel registry ──────────────────────────────────────────────────────────
 type PanelId =
@@ -105,7 +266,7 @@ function PlaceholderPanel({ item }: { item: NavItem }) {
           fontFamily: "'Inter', sans-serif", fontSize: 9, fontWeight: 700,
           color: "#2E2E2E", letterSpacing: "0.24em", display: "block", marginBottom: 8,
         }}>
-          {item.placeholder ? "NOT YET BUILT" : "CONTENT PANEL · PHASE 2"}
+          {item.placeholder ? "NOT YET BUILT" : "CONTENT PANEL · PHASE 3"}
         </span>
         <h2 style={{
           ...D, fontWeight: 900, fontSize: 32, color: "#E8E6DE",
@@ -146,11 +307,12 @@ function PlaceholderPanel({ item }: { item: NavItem }) {
 
 // ── Main control page ───────────────────────────────────────────────────────
 export default function ControlPage() {
-  const [liveState, setLiveState]     = useState<BroadcastState | null>(null);
-  const [activePanel, setActivePanel] = useState<PanelId>("match-setup");
-  const [search, setSearch]           = useState("");
-  const [subtitle, setSubtitle]       = useState("Broadcast Graphic system");
-  const [sidebarTab, setSidebarTab]   = useState<SidebarTab>("live");
+  const [liveState, setLiveState]         = useState<BroadcastState | null>(null);
+  const [activePanel, setActivePanel]     = useState<PanelId>("match-setup");
+  const [search, setSearch]               = useState("");
+  const [subtitle, setSubtitle]           = useState("Broadcast Graphic system");
+  const [sidebarTab, setSidebarTab]       = useState<SidebarTab>("live");
+  const [overlayDataMap, setOverlayDataMap] = useState<OverlayDataMap>(makeDefaultOverlayData);
   const searchRef = useRef<HTMLInputElement>(null);
 
   // ── Supabase: watch broadcast state ────────────────────────────────────
@@ -168,7 +330,7 @@ export default function ControlPage() {
     return () => { (sb as any).removeChannel(ch); };
   }, []);
 
-  // ── ALL OUT ─────────────────────────────────────────────────────────────
+  // ── ALL OUT / CUT ───────────────────────────────────────────────────────
   const allOut = useCallback(async () => {
     const sb = createClient();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -177,17 +339,26 @@ export default function ControlPage() {
       .eq("id", "main");
   }, []);
 
+  // ── TAKE: push preview overlay + data to program ────────────────────────
+  const take = useCallback(async (panelId: PanelId) => {
+    const overlayType = PANEL_TO_OVERLAY[panelId];
+    if (!overlayType) return; // panel has no graphic
+    const data = overlayDataMap[overlayType as keyof OverlayDataMap];
+    const sb = createClient();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (sb as any).from("broadcast_state")
+      .update({ active_overlay: overlayType, overlay_data: data, is_live: true })
+      .eq("id", "main");
+  }, [overlayDataMap]);
+
   // ── Keyboard shortcuts ──────────────────────────────────────────────────
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const el = e.target as HTMLElement;
       if (["INPUT","TEXTAREA","SELECT"].includes(el.tagName) || el.isContentEditable) return;
 
-      if (e.key === "Escape") {
-        e.preventDefault();
-        void allOut();
-        return;
-      }
+      if (e.key === "Escape") { e.preventDefault(); void allOut(); return; }
+      if (e.key === "Enter")  { e.preventDefault(); void take(activePanel); return; }
       if (e.key === "/") {
         e.preventDefault();
         searchRef.current?.focus();
@@ -198,11 +369,21 @@ export default function ControlPage() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [allOut]);
+  }, [allOut, take, activePanel]);
 
   // ── Derived state ───────────────────────────────────────────────────────
   const isOnAir    = !!(liveState?.is_live && liveState.active_overlay);
   const onAirCount = isOnAir ? 1 : 0;
+
+  // Preview: overlay type + data for the currently selected sidebar panel
+  const previewOverlay = (PANEL_TO_OVERLAY[activePanel] ?? null) as OverlayType;
+  const previewData    = previewOverlay
+    ? overlayDataMap[previewOverlay as keyof OverlayDataMap]
+    : null;
+
+  // Program: whatever is in Supabase right now
+  const programOverlay = (liveState?.is_live ? liveState.active_overlay : null) ?? null;
+  const programData    = liveState?.overlay_data ?? {};
 
   const filteredPre = search
     ? PRE_MATCH.filter(i => i.label.toLowerCase().includes(search.toLowerCase()))
@@ -314,7 +495,7 @@ export default function ControlPage() {
           </span>
 
           <span style={{ fontSize: 9, color: "#1A1A1A", letterSpacing: "0.14em", marginLeft: 4 }}>
-            WIRED PHASE 2
+            WIRED PHASE 3
           </span>
         </div>
 
@@ -474,65 +655,34 @@ export default function ControlPage() {
         {/* ════ MAIN CONTENT ════ */}
         <main style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
 
-          {/* Monitor row */}
+          {/* ── Monitor row ── */}
           <div style={{
             flexShrink: 0, background: "#050505",
             borderBottom: "1px solid #0D0D0D",
-            padding: "14px 20px 14px",
-            display: "flex", gap: 14, alignItems: "stretch",
+            padding: "14px 20px",
+            display: "flex", gap: 14, alignItems: "flex-start",
           }}>
+            {/* PREVIEW */}
+            <ScaledMonitor
+              label="PREVIEW"
+              overlay={previewOverlay}
+              data={previewData}
+            />
 
-            {/* PREVIEW monitor */}
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#252525" }}/>
-                <span style={{ fontSize: 9, fontWeight: 700, color: "#2E2E2E", letterSpacing: "0.26em" }}>PREVIEW</span>
-              </div>
-              <div style={{
-                flex: 1, background: "#080808", border: "1px solid #111",
-                aspectRatio: "16/9",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                minHeight: 188,
-              }}>
-                <span style={{ fontSize: 10, color: "#161616", letterSpacing: "0.22em", fontWeight: 600 }}>
-                  SELECT A GRAPHIC
-                </span>
-              </div>
-            </div>
-
-            {/* PROGRAM monitor */}
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <div style={{
-                  width: 5, height: 5, borderRadius: "50%",
-                  background: isOnAir ? "#00C853" : "#252525",
-                  animation: isOnAir ? "livePulse 1.2s ease-in-out infinite" : "none",
-                }}/>
-                <span style={{
-                  fontSize: 9, fontWeight: 700, letterSpacing: "0.26em",
-                  color: isOnAir ? "#00C853" : "#2E2E2E",
-                }}>PROGRAM</span>
-              </div>
-              <div style={{
-                flex: 1, background: "#080808",
-                border: `1px solid ${isOnAir ? "rgba(0,200,83,0.18)" : "#111"}`,
-                aspectRatio: "16/9",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                minHeight: 188,
-              }}>
-                <span style={{ fontSize: 10, color: "#161616", letterSpacing: "0.22em", fontWeight: 600 }}>
-                  {isOnAir
-                    ? (liveState?.active_overlay as string || "").toUpperCase().replace("-", " ")
-                    : "NO GRAPHICS ON AIR"}
-                </span>
-              </div>
-            </div>
+            {/* PROGRAM */}
+            <ScaledMonitor
+              label="PROGRAM"
+              isProgram
+              overlay={programOverlay}
+              data={programData}
+            />
 
             {/* ON AIR control column */}
             <div style={{
-              width: 238, flexShrink: 0,
+              width: 224, flexShrink: 0,
               display: "flex", flexDirection: "column",
               border: "1px solid #0D0D0D", background: "#080808",
+              alignSelf: "stretch",
             }}>
               {/* Header */}
               <div style={{
@@ -545,34 +695,48 @@ export default function ControlPage() {
                 </span>
               </div>
 
-              {/* Status text */}
-              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 16px" }}>
-                <span style={{ fontSize: 10, color: "#161616", letterSpacing: "0.2em", textAlign: "center", fontWeight: 500 }}>
-                  {isOnAir
-                    ? (liveState?.active_overlay as string || "").toUpperCase().replace("-", " ")
-                    : "No graphics on air"}
-                </span>
+              {/* Status */}
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "12px 16px", gap: 6 }}>
+                {isOnAir ? (
+                  <>
+                    <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#00C853", animation: "livePulse 1.2s ease-in-out infinite" }}/>
+                    <span style={{ fontSize: 10, color: "#00C853", letterSpacing: "0.18em", textAlign: "center", fontWeight: 700 }}>
+                      {(programOverlay ?? "").toUpperCase()}
+                    </span>
+                  </>
+                ) : (
+                  <span style={{ fontSize: 10, color: "#1A1A1A", letterSpacing: "0.18em", textAlign: "center" }}>
+                    No graphics on air
+                  </span>
+                )}
               </div>
 
-              {/* TAKE / CUT / ALL OUT buttons */}
-              <div style={{ padding: "10px" }}>
-                <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+              {/* TAKE / CUT / ALL OUT */}
+              <div style={{ padding: "10px", display: "flex", flexDirection: "column", gap: 6 }}>
+                <div style={{ display: "flex", gap: 6 }}>
                   {/* TAKE */}
-                  <button style={{
-                    flex: 1, padding: "7px 0",
-                    background: "#111", border: "1px solid #1A1A1A",
-                    color: "#888", cursor: "pointer", fontSize: 10,
-                    fontWeight: 700, letterSpacing: "0.14em",
-                    display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-                    fontFamily: "'Inter', sans-serif",
-                  }}>
-                    TAKE <span style={{ color: "#3A3A3A", fontSize: 11, marginTop: -1 }}>↵</span>
+                  <button
+                    onClick={() => void take(activePanel)}
+                    disabled={!previewOverlay}
+                    style={{
+                      flex: 1, padding: "8px 0",
+                      background: previewOverlay ? "rgba(184,146,58,0.08)" : "#111",
+                      border: `1px solid ${previewOverlay ? "rgba(184,146,58,0.28)" : "#1A1A1A"}`,
+                      color: previewOverlay ? "#B8923A" : "#333",
+                      cursor: previewOverlay ? "pointer" : "default",
+                      fontSize: 10, fontWeight: 700, letterSpacing: "0.14em",
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+                      fontFamily: "'Inter', sans-serif",
+                      transition: "all 0.15s",
+                    }}
+                  >
+                    TAKE <span style={{ fontSize: 12, marginTop: -1, opacity: 0.6 }}>↵</span>
                   </button>
                   {/* CUT */}
                   <button
                     onClick={() => void allOut()}
                     style={{
-                      flex: 1, padding: "7px 0",
+                      flex: 1, padding: "8px 0",
                       background: "#111", border: "1px solid #1A1A1A",
                       color: "#555", cursor: "pointer", fontSize: 10,
                       fontWeight: 700, letterSpacing: "0.1em",
@@ -580,14 +744,14 @@ export default function ControlPage() {
                       fontFamily: "'Inter', sans-serif",
                     }}
                   >
-                    CUT <span style={{ color: "#333", fontSize: 9 }}>· Esc</span>
+                    CUT <span style={{ color: "#2E2E2E", fontSize: 9 }}>· Esc</span>
                   </button>
                 </div>
                 {/* ALL OUT */}
                 <button
                   onClick={() => void allOut()}
                   style={{
-                    width: "100%", padding: "7px 0",
+                    width: "100%", padding: "8px 0",
                     background: "#111", border: "1px solid #1A1A1A",
                     color: "#3A3A3A", cursor: "pointer", fontSize: 10,
                     fontWeight: 700, letterSpacing: "0.16em",
