@@ -1,117 +1,162 @@
 "use client";
 import FilmGrain from "./FilmGrain";
 import { TEAMS } from "@/lib/data/teams";
-import type { LineupData, LineupPlayer } from "@/lib/supabase/types";
+import type { LineupData, LineupPlayer, LineupPosition } from "@/lib/supabase/types";
 import type { TeamCode } from "@/lib/data/teams";
 
 const D = { fontFamily: "'Barlow Condensed', sans-serif", fontStyle: "italic" as const, textTransform: "uppercase" as const };
-const L = { fontFamily: "'Inter', sans-serif", fontWeight: 600, textTransform: "uppercase" as const };
+const L = { fontFamily: "'Inter', sans-serif", fontWeight: 600 as const, textTransform: "uppercase" as const };
 
-function PlayerCard({ player, visible, index }: { player: LineupPlayer; visible: boolean; index: number }) {
+const POSITION_FULL: Record<LineupPosition, string> = {
+  GK: "GOALKEEPER",
+  ALA: "ALA",
+  FIXO: "FIXO",
+  PIVO: "PIVO",
+  COACH: "COACH",
+};
+
+const DEFAULT_POSITIONS: LineupPosition[] = ["GK", "ALA", "ALA", "PIVO", "FIXO"];
+
+function PlayerColumn({
+  player, visible, index, teamCode,
+}: {
+  player: LineupPlayer; visible: boolean; index: number; teamCode: string;
+}) {
+  const pos = (player.position || DEFAULT_POSITIONS[index] || "ALA") as LineupPosition;
+
   return (
     <div style={{
-      display: "flex", alignItems: "center", gap: 0,
-      opacity: visible ? 1 : 0,
-      transform: visible ? "translateY(0)" : "translateY(24px)",
-      transition: `opacity 0.5s cubic-bezier(0.16,0.84,0.44,1) ${index * 0.08}s, transform 0.5s cubic-bezier(0.16,0.84,0.44,1) ${index * 0.08}s`,
-      borderBottom: "1px solid rgba(255,255,255,0.06)",
+      flex: 1, display: "flex", flexDirection: "column",
+      borderRight: index < 4 ? "1px solid rgba(255,255,255,0.055)" : "none",
+      position: "relative", overflow: "hidden",
     }}>
-      {/* Number */}
+      {/* Position label strip */}
       <div style={{
-        width: 120, height: 88, flexShrink: 0,
-        display: "flex", alignItems: "center", justifyContent: "center",
-        background: "rgba(184,146,58,0.08)",
-        borderRight: "1px solid rgba(184,146,58,0.2)",
+        padding: "18px 22px 14px",
+        borderBottom: "1px solid rgba(255,255,255,0.055)",
+        background: "rgba(0,0,0,0.18)",
+        flexShrink: 0,
       }}>
-        <span style={{
-          ...D, fontWeight: 900, fontSize: 56, color: "#B8923A",
-          letterSpacing: "-0.02em", lineHeight: 1, fontVariantNumeric: "tabular-nums",
+        <span style={{ ...L, fontSize: 11, color: "#B8923A", letterSpacing: "0.22em" }}>
+          {POSITION_FULL[pos] || pos}
+        </span>
+      </div>
+
+      {/* Card body */}
+      <div style={{ flex: 1, position: "relative" }}>
+
+        {/* Hidden state: team code watermark */}
+        <div style={{
+          position: "absolute", inset: 0,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          opacity: visible ? 0 : 1,
+          transition: `opacity 0.4s ease ${index * 0.06}s`,
+          pointerEvents: "none",
         }}>
-          {player.number}
-        </span>
-      </div>
+          <span style={{
+            ...D, fontWeight: 900, fontSize: 96, color: "rgba(255,255,255,0.045)",
+            letterSpacing: "-0.02em",
+          }}>
+            {teamCode}
+          </span>
+        </div>
 
-      {/* Name */}
-      <div style={{ flex: 1, padding: "0 40px" }}>
-        <span style={{ ...D, fontWeight: 800, fontSize: 52, color: "#E8E6DE", letterSpacing: "-0.01em", lineHeight: 1 }}>
-          {player.name}
-        </span>
+        {/* Revealed state: number + name */}
+        <div style={{
+          position: "absolute", bottom: 0, left: 0, right: 0,
+          padding: "0 22px 36px",
+          opacity: visible ? 1 : 0,
+          transform: visible ? "translateY(0)" : "translateY(40px)",
+          transition: `opacity 0.55s cubic-bezier(0.16,0.84,0.44,1) ${index * 0.09}s, transform 0.55s cubic-bezier(0.16,0.84,0.44,1) ${index * 0.09}s`,
+        }}>
+          {/* Jersey number */}
+          <span style={{
+            ...D, fontWeight: 900, fontSize: 96, color: "#B8923A",
+            letterSpacing: "-0.04em", lineHeight: 0.85, display: "block",
+            marginBottom: 10, fontVariantNumeric: "tabular-nums",
+          }}>
+            {player.number || "–"}
+          </span>
+          {/* Player name */}
+          <span style={{
+            ...D, fontWeight: 800, fontSize: 34, color: "#E8E6DE",
+            letterSpacing: "-0.01em", lineHeight: 1.05, display: "block",
+          }}>
+            {player.name || "—"}
+          </span>
+        </div>
       </div>
-
-      {/* Gold accent dot */}
-      <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#B8923A", marginRight: 40, opacity: 0.6, flexShrink: 0 }}/>
     </div>
   );
 }
 
 export default function LineupGraphic({ data }: { data: LineupData }) {
   const team = TEAMS[data.team_code as TeamCode];
-  const players = data.players || [];
   const revealed = data.revealed ?? 0;
+  const cols = Array.from({ length: 5 }, (_, i) => data.players?.[i] ?? { number: "–", name: "" });
 
   return (
     <div style={{
       position: "absolute", inset: 0, width: 1920, height: 1080, overflow: "hidden",
-      background: "#0A0A0A",
+      background: "linear-gradient(160deg, #0A1230 0%, #060C1E 55%, #02060F 100%)",
+      display: "flex", flexDirection: "column",
     }}>
       <FilmGrain />
 
-      {/* Team color accent bar — left edge */}
-      <div style={{
-        position: "absolute", top: 0, left: 0, width: 8, height: "100%",
-        background: team?.primary || "#B8923A",
-      }}/>
+      {/* Top accent bar — team color */}
+      <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 4, background: team?.primary || "#B8923A" }}/>
 
-      {/* Background gradient using team color */}
+      {/* Team color radial glow bottom-left */}
       <div style={{
         position: "absolute", inset: 0,
-        background: `radial-gradient(ellipse at 0% 50%, ${team?.primary || "#B8923A"}18 0%, transparent 50%)`,
-      }}/>
-      <div style={{
-        position: "absolute", inset: 0,
-        background: "radial-gradient(ellipse at 100% 100%, rgba(26,37,69,0.5) 0%, transparent 60%)",
+        background: `radial-gradient(ellipse at 0% 100%, ${team?.primary || "#B8923A"}10 0%, transparent 48%)`,
       }}/>
 
-      {/* Header panel */}
+      {/* Header */}
       <div style={{
-        display: "flex", alignItems: "center", gap: 36,
-        padding: "40px 60px 32px 60px",
-        borderBottom: "2px solid #1A1A1A",
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "34px 52px 26px 52px",
+        borderBottom: "1px solid rgba(255,255,255,0.065)",
+        flexShrink: 0,
       }}>
-        {team && (
-          <img
-            src={team.crest}
-            alt={team.code}
-            style={{ width: 96, height: 96, objectFit: "contain", filter: "drop-shadow(0 8px 20px rgba(0,0,0,0.6))" }}
-          />
-        )}
         <div>
-          <span style={{ ...L, fontSize: 12, color: team?.primary || "#B8923A", letterSpacing: "0.2em", display: "block", marginBottom: 6 }}>
-            Starting Five
-          </span>
-          <span style={{ ...D, fontWeight: 900, fontSize: 64, color: "#E8E6DE", letterSpacing: "-0.02em", lineHeight: 0.88 }}>
+          {/* "— STARTING FIVE" label */}
+          <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 4 }}>
+            <div style={{ width: 20, height: 1, background: "rgba(184,146,58,0.55)" }}/>
+            <span style={{ ...L, fontSize: 13, color: "#B8923A", letterSpacing: "0.3em" }}>STARTING FIVE</span>
+          </div>
+          {/* Team name */}
+          <span style={{
+            ...D, fontWeight: 900, fontSize: 80, color: "#E8E6DE",
+            letterSpacing: "-0.025em", lineHeight: 0.9,
+          }}>
             {team?.name || data.team_code}
           </span>
         </div>
-        <div style={{ flex: 1 }}/>
-        <img src="/assets/mpfl-badge.png" alt="MPFL" style={{ height: 64, width: "auto", opacity: 0.5 }}/>
+
+        {/* Crest + MPFL badge */}
+        <div style={{ display: "flex", alignItems: "center", gap: 28 }}>
+          {team && (
+            <img
+              src={team.crest}
+              alt={team.code}
+              style={{ height: 72, width: "auto", objectFit: "contain", opacity: 0.72, filter: "drop-shadow(0 4px 16px rgba(0,0,0,0.5))" }}
+            />
+          )}
+          <img src="/assets/mpfl-badge.png" alt="MPFL" style={{ height: 52, width: "auto", opacity: 0.45 }}/>
+        </div>
       </div>
 
-      {/* Player list */}
-      <div style={{ padding: "0 0 0 8px" }}>
-        {players.slice(0, 5).map((player, i) => (
-          <PlayerCard key={i} player={player} visible={i < revealed} index={i} />
-        ))}
-      </div>
-
-      {/* Reveal counter bottom right */}
-      <div style={{ position: "absolute", bottom: 40, right: 60, display: "flex", alignItems: "center", gap: 8 }}>
-        {[0, 1, 2, 3, 4].map(i => (
-          <div key={i} style={{
-            width: 8, height: 8, borderRadius: "50%",
-            background: i < revealed ? "#B8923A" : "#1A1A1A",
-            border: "1px solid #333333",
-          }}/>
+      {/* Player columns */}
+      <div style={{ display: "flex", flex: 1 }}>
+        {cols.map((player, i) => (
+          <PlayerColumn
+            key={i}
+            player={player as LineupPlayer}
+            visible={i < revealed}
+            index={i}
+            teamCode={data.team_code}
+          />
         ))}
       </div>
     </div>

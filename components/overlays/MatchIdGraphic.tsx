@@ -4,7 +4,7 @@ import type { MatchIdData } from "@/lib/supabase/types";
 import type { TeamCode } from "@/lib/data/teams";
 
 const D = { fontFamily: "'Barlow Condensed', sans-serif", fontStyle: "italic" as const, textTransform: "uppercase" as const };
-const L = { fontFamily: "'Inter', sans-serif", fontWeight: 600, textTransform: "uppercase" as const };
+const L = { fontFamily: "'Inter', sans-serif", fontWeight: 600 as const, textTransform: "uppercase" as const };
 
 export default function MatchIdGraphic({ data }: { data: MatchIdData }) {
   const home = TEAMS[data.home_code as TeamCode] ?? TEAMS.JDT;
@@ -12,7 +12,7 @@ export default function MatchIdGraphic({ data }: { data: MatchIdData }) {
 
   return (
     <div style={{ position: "absolute", inset: 0, width: 1920, height: 1080, overflow: "hidden" }}>
-      {/* SVG background */}
+      {/* Jagged split SVG background */}
       <img
         src="/assets/matchid-bg.svg"
         alt=""
@@ -23,95 +23,113 @@ export default function MatchIdGraphic({ data }: { data: MatchIdData }) {
       {/* Top accent bar */}
       <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 4, background: "#B8923A", zIndex: 2 }}/>
 
-      {/* MPFL badge top center */}
-      <div style={{ position: "absolute", top: 48, left: "50%", transform: "translateX(-50%)", zIndex: 10 }}>
-        <img src="/assets/mpfl-badge.png" alt="MPFL" style={{ height: 80, width: "auto" }}/>
-      </div>
-
-      {/* Competition label */}
-      <div style={{ position: "absolute", top: 152, left: "50%", transform: "translateX(-50%)", zIndex: 10, textAlign: "center" }}>
-        <span style={{ ...L, fontSize: 13, color: "#B8923A", letterSpacing: "0.2em" }}>
-          {data.competition || "MALAYSIA PREMIER FUTSAL LEAGUE"}
+      {/* Top center: competition label + matchday */}
+      <div style={{
+        position: "absolute", top: 52, left: "50%", transform: "translateX(-50%)",
+        zIndex: 10, textAlign: "center", whiteSpace: "nowrap",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, justifyContent: "center", marginBottom: 6 }}>
+          <div style={{ width: 20, height: 1, background: "rgba(184,146,58,0.55)" }}/>
+          <span style={{ ...L, fontSize: 12, color: "#B8923A", letterSpacing: "0.26em" }}>
+            {data.competition || "MPFL 2026"}
+          </span>
+          <div style={{ width: 20, height: 1, background: "rgba(184,146,58,0.55)" }}/>
+        </div>
+        <span style={{ ...D, fontWeight: 900, fontSize: 40, color: "#E8E6DE", letterSpacing: "0.04em" }}>
+          {data.matchday || "MATCHDAY"}
         </span>
       </div>
 
-      {/* HOME TEAM — left half */}
+      {/* Center layout: HOME | MPFL BADGE | AWAY */}
       <div style={{
-        position: "absolute", left: 0, top: 0, width: 900, height: 1080,
-        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-        gap: 32, zIndex: 5,
+        position: "absolute", left: 0, right: 0, top: 0, bottom: 160,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        zIndex: 5,
       }}>
-        <img
-          src={home.crest}
-          alt={home.name}
-          style={{ width: 280, height: 280, objectFit: "contain", filter: "drop-shadow(0 16px 40px rgba(0,0,0,0.6))" }}
-        />
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+        {/* Home */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 28 }}>
+          <img
+            src={home.crest}
+            alt={home.name}
+            style={{ width: 192, height: 192, objectFit: "contain", filter: "drop-shadow(0 20px 40px rgba(0,0,0,0.65))" }}
+          />
           <span style={{
-            ...D, fontWeight: 900, fontSize: 72, letterSpacing: "-0.02em", lineHeight: 0.92,
-            color: "#E8E6DE", textAlign: "center", maxWidth: 700,
-            textShadow: "0 4px 20px rgba(0,0,0,0.5)",
+            ...D, fontWeight: 900, fontSize: 56, letterSpacing: "-0.02em", lineHeight: 1,
+            color: "#E8E6DE", textAlign: "center", maxWidth: 600,
+            textShadow: "0 4px 24px rgba(0,0,0,0.8)",
           }}>
             {home.name}
           </span>
-          <div style={{ width: 80, height: 3, background: home.primary, opacity: 0.8 }}/>
         </div>
-      </div>
 
-      {/* AWAY TEAM — right half */}
-      <div style={{
-        position: "absolute", right: 0, top: 0, width: 980, height: 1080,
-        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-        gap: 32, zIndex: 5,
-      }}>
-        <img
-          src={away.crest}
-          alt={away.name}
-          style={{ width: 280, height: 280, objectFit: "contain", filter: "drop-shadow(0 16px 40px rgba(0,0,0,0.4))" }}
-        />
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+        {/* Center MPFL badge — acts as VS */}
+        <div style={{ flexShrink: 0, width: 280, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <img
+            src="/assets/mpfl-badge.png"
+            alt="MPFL"
+            style={{
+              width: 184, height: 184, objectFit: "contain",
+              filter: "drop-shadow(0 0 48px rgba(184,146,58,0.35)) drop-shadow(0 8px 24px rgba(0,0,0,0.6))",
+            }}
+          />
+        </div>
+
+        {/* Away */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 28 }}>
+          <img
+            src={away.crest}
+            alt={away.name}
+            style={{ width: 192, height: 192, objectFit: "contain", filter: "drop-shadow(0 20px 40px rgba(0,0,0,0.5))" }}
+          />
           <span style={{
-            ...D, fontWeight: 900, fontSize: 72, letterSpacing: "-0.02em", lineHeight: 0.92,
-            color: "#E8E6DE", textAlign: "center", maxWidth: 700,
-            textShadow: "0 4px 20px rgba(0,0,0,0.4)",
+            ...D, fontWeight: 900, fontSize: 56, letterSpacing: "-0.02em", lineHeight: 1,
+            color: "#E8E6DE", textAlign: "center", maxWidth: 600,
+            textShadow: "0 4px 24px rgba(0,0,0,0.6)",
           }}>
             {away.name}
           </span>
-          <div style={{ width: 80, height: 3, background: away.primary, opacity: 0.8 }}/>
         </div>
       </div>
 
-      {/* VS chip — center overlay */}
+      {/* Bottom info bar — three labeled boxes */}
       <div style={{
-        position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)",
-        zIndex: 20, display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
+        position: "absolute", bottom: 0, left: 0, right: 0, height: 160, zIndex: 15,
+        background: "rgba(2,6,15,0.92)",
+        borderTop: "1px solid rgba(184,146,58,0.18)",
+        display: "flex", alignItems: "stretch",
       }}>
+        {/* DATE */}
         <div style={{
-          background: "#0A0A0A", border: "2px solid #B8923A",
-          padding: "10px 24px",
+          flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+          borderRight: "1px solid rgba(255,255,255,0.07)",
         }}>
-          <span style={{ ...D, fontWeight: 900, fontSize: 28, color: "#B8923A", letterSpacing: "0.04em" }}>VS</span>
-        </div>
-      </div>
-
-      {/* Bottom info bar */}
-      <div style={{
-        position: "absolute", bottom: 0, left: 0, right: 0, zIndex: 15,
-        background: "linear-gradient(0deg, rgba(2,6,15,0.95) 0%, transparent 100%)",
-        padding: "60px 80px 40px",
-        display: "flex", alignItems: "flex-end", justifyContent: "center", gap: 40,
-      }}>
-        {data.venue && (
-          <span style={{ ...L, fontSize: 14, color: "#777777", letterSpacing: "0.12em" }}>{data.venue}</span>
-        )}
-        {data.venue && data.kickoff && (
-          <span style={{ color: "#333333" }}>•</span>
-        )}
-        {data.kickoff && (
-          <span style={{ ...L, fontSize: 14, color: "#B8923A", letterSpacing: "0.12em" }}>
-            KICK OFF {data.kickoff}
+          <span style={{ ...L, fontSize: 11, color: "#444", letterSpacing: "0.26em", marginBottom: 10 }}>DATE</span>
+          <span style={{ ...D, fontWeight: 800, fontSize: 42, color: "#E8E6DE", letterSpacing: "-0.01em", lineHeight: 1 }}>
+            {data.match_date || "TBD"}
           </span>
-        )}
+        </div>
+
+        {/* VENUE */}
+        <div style={{
+          flex: 2, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+          borderRight: "1px solid rgba(255,255,255,0.07)", padding: "0 48px",
+        }}>
+          <span style={{ ...L, fontSize: 11, color: "#444", letterSpacing: "0.26em", marginBottom: 10 }}>VENUE</span>
+          <span style={{
+            ...D, fontWeight: 800, fontSize: 38, color: "#E8E6DE", letterSpacing: "-0.01em", lineHeight: 1,
+            textAlign: "center",
+          }}>
+            {data.venue || "TBD"}
+          </span>
+        </div>
+
+        {/* KICK-OFF */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+          <span style={{ ...L, fontSize: 11, color: "#444", letterSpacing: "0.26em", marginBottom: 10 }}>KICK-OFF</span>
+          <span style={{ ...D, fontWeight: 900, fontSize: 48, color: "#B8923A", letterSpacing: "-0.02em", lineHeight: 1 }}>
+            {data.kickoff || "TBD"}
+          </span>
+        </div>
       </div>
     </div>
   );
