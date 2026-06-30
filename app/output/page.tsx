@@ -1,23 +1,37 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { cacheBroadcastState, getCachedBroadcastState, cacheMatch, getCachedMatch } from "@/lib/offline/db";
-import type { BroadcastState, Match } from "@/lib/supabase/types";
-import ScoreboardOverlay from "@/components/overlays/ScoreboardOverlay";
-import LowerThirdOverlay from "@/components/overlays/LowerThirdOverlay";
+import type { BroadcastState, Match, OverlayType, CountdownData, MatchIdData, TableData, CircuitData, LineupData } from "@/lib/supabase/types";
+import CountdownGraphic from "@/components/overlays/CountdownGraphic";
+import MatchIdGraphic from "@/components/overlays/MatchIdGraphic";
+import StandingsGraphic from "@/components/overlays/StandingsGraphic";
+import CircuitGraphic from "@/components/overlays/CircuitGraphic";
+import LineupGraphic from "@/components/overlays/LineupGraphic";
+
+type DisplayState = {
+  overlay: OverlayType;
+  data: Record<string, unknown>;
+};
 
 export default function OutputPage() {
-  const [state, setState] = useState<BroadcastState | null>(null);
+  const [broadcastState, setBroadcastState] = useState<BroadcastState | null>(null);
   const [match, setMatch] = useState<Match | null>(null);
   const [online, setOnline] = useState(true);
 
+  const [display, setDisplay] = useState<DisplayState>({ overlay: null, data: {} });
+  const [opacity, setOpacity] = useState(0);
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const loadFromCache = useCallback(async () => {
     const cached = await getCachedBroadcastState();
-    if (cached) setState(cached);
-    if (cached?.match_id) {
-      const cachedMatch = await getCachedMatch(cached.match_id);
-      if (cachedMatch) setMatch(cachedMatch);
+    if (cached) {
+      setBroadcastState(cached);
+      if (cached.match_id) {
+        const cachedMatch = await getCachedMatch(cached.match_id);
+        if (cachedMatch) setMatch(cachedMatch);
+      }
     }
   }, []);
 
@@ -25,90 +39,101 @@ export default function OutputPage() {
     const supabase = createClient();
 
     async function init() {
-      // Load from cache first for instant display
       await loadFromCache();
 
-      // Fetch live data
       const { data: stateData } = await supabase
-        .from("broadcast_state")
-        .select("*")
-        .eq("id", "main")
-        .single();
-
+        .from("broadcast_state").select("*").eq("id", "main").single();
       if (stateData) {
-        setState(stateData);
-        await cacheBroadcastState(stateData);
+        setBroadcastState(stateData as BroadcastState);
+        await cacheBroadcastState(stateData as BroadcastState);
 
-        if (stateData.match_id) {
+        if ((stateData as BroadcastState).match_id) {
           const { data: matchData } = await supabase
-            .from("matches")
-            .select("*")
-            .eq("id", stateData.match_id)
-            .single();
-          if (matchData) {
-            setMatch(matchData);
-            await cacheMatch(matchData);
-          }
+            .from("matches").select("*").eq("id", (stateData as BroadcastState).match_id).single();
+          if (matchData) { setMatch(matchData as Match); await cacheMatch(matchData as Match); }
         }
       }
     }
 
     init();
 
-    // Subscribe to real-time broadcast state changes
-    const channel = supabase
-      .channel("broadcast-output")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "broadcast_state" },
-        async (payload) => {
-          const updated = payload.new as BroadcastState;
-          setState(updated);
-          await cacheBroadcastState(updated);
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "matches" },
-        async (payload) => {
-          const updated = payload.new as Match;
-          setMatch(updated);
-          await cacheMatch(updated);
-        }
-      )
+    const channel = supabase.channel("output-v2")
+      .on("postgres_changes", { event: "*", schema: "public", table: "broadcast_state" }, async (payload) => {
+        const updated = payload.new as BroadcastState;
+        setBroadcastState(updated);
+        await cacheBroadcastState(updated);
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "matches" }, async (payload) => {
+        const updated = payload.new as Match;
+        setMatch(updated);
+        await cacheMatch(updated);
+      })
       .subscribe();
 
-    const handleOnline = () => setOnline(true);
-    const handleOffline = () => { setOnline(false); loadFromCache(); };
-    window.addEventListener("online", handleOnline);
-    window.addEventListener("offline", handleOffline);
+    window.addEventListener("online", () => setOnline(true));
+    window.addEventListener("offline", () => { setOnline(false); loadFromCache(); });
 
-    return () => {
-      supabase.removeChannel(channel);
-      window.removeEventListener("online", handleOnline);
-      window.removeEventListener("offline", handleOffline);
-    };
+    return () => { supabase.removeChannel(channel); };
   }, [loadFromCache]);
 
-  if (!state?.is_live || !state.active_overlay) return null;
+  // Handle graphic transitions
+  useEffect(() => {
+    const isActive = broadcastState?.is_live && broadcastState.active_overlay;
+
+    if (isActive) {
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+      setDisplay({ overlay: broadcastState.active_overlay, data: broadcastState.overlay_data || {} });
+      requestAnimationFrame(() => requestAnimationFrame(() => setOpacity(1)));
+    } else {
+      setOpacity(0);
+      hideTimerRef.current = setTimeout(() => setDisplay({ overlay: null, data: {} }), 600);
+    }
+
+    return () => { if (hideTimerRef.current) clearTimeout(hideTimerRef.current); };
+  }, [broadcastState?.is_live, broadcastState?.active_overlay, broadcastState?.overlay_data]);
+
+  function renderOverlay() {
+    if (!display.overlay) return null;
+    const d = display.data;
+
+    switch (display.overlay) {
+      case "countdown":
+        return <CountdownGraphic data={d as unknown as CountdownData} />;
+      case "matchid":
+        return <MatchIdGraphic data={d as unknown as MatchIdData} />;
+      case "table":
+        return <StandingsGraphic data={d as unknown as TableData} />;
+      case "circuit":
+        return <CircuitGraphic data={d as unknown as CircuitData} />;
+      case "lineup":
+        return <LineupGraphic data={d as unknown as LineupData} />;
+      default:
+        return null;
+    }
+  }
 
   return (
     <div style={{ width: "1920px", height: "1080px", position: "relative", overflow: "hidden" }}>
+      {/* Offline badge */}
       {!online && (
         <div style={{
-          position: "absolute", top: 8, right: 8, background: "rgba(220,38,38,0.8)",
-          color: "white", fontSize: 11, padding: "2px 8px", borderRadius: 4, fontFamily: "monospace"
+          position: "absolute", top: 8, right: 8, zIndex: 999,
+          background: "rgba(220,38,38,0.85)", color: "white",
+          fontSize: 11, padding: "2px 8px", fontFamily: "monospace",
         }}>
           OFFLINE
         </div>
       )}
 
-      {state.active_overlay === "scoreboard" && match && (
-        <ScoreboardOverlay match={match} />
-      )}
-      {state.active_overlay === "lower_third" && (
-        <LowerThirdOverlay data={state.overlay_data} />
-      )}
+      {/* Main overlay with fade transition */}
+      <div style={{
+        position: "absolute", inset: 0,
+        opacity,
+        transition: "opacity 0.5s cubic-bezier(0.16,0.84,0.44,1)",
+      }}>
+        {renderOverlay()}
+      </div>
+
     </div>
   );
 }
