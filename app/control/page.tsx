@@ -8,11 +8,22 @@ const supabase = createClient();
 
 const STATUS_LABELS = { pre: "Pre-Match", live: "Live", ht: "Half Time", ft: "Full Time" } as const;
 
+type PartialMatch = {
+  id?: string;
+  home_team: string;
+  away_team: string;
+  home_score: number;
+  away_score: number;
+  match_time: string;
+  status: Match["status"];
+  venue: string | null;
+  competition: string | null;
+};
+
 export default function ControlPage() {
-  const [match, setMatch] = useState<Match>({
-    id: "", home_team: "", away_team: "", home_score: 0, away_score: 0,
+  const [match, setMatch] = useState<PartialMatch>({
+    home_team: "", away_team: "", home_score: 0, away_score: 0,
     match_time: "00:00", status: "pre", venue: null, competition: null,
-    created_at: "", updated_at: "",
   });
   const [state, setState] = useState<BroadcastState | null>(null);
   const [lowerThirdTitle, setLowerThirdTitle] = useState("");
@@ -21,14 +32,16 @@ export default function ControlPage() {
   const [online, setOnline] = useState(true);
 
   const load = useCallback(async () => {
-    const { data: stateData } = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: stateData } = await (supabase as any)
       .from("broadcast_state").select("*").eq("id", "main").single();
     if (stateData) {
-      setState(stateData);
-      if (stateData.match_id) {
-        const { data: matchData } = await supabase
-          .from("matches").select("*").eq("id", stateData.match_id).single();
-        if (matchData) setMatch(matchData);
+      setState(stateData as BroadcastState);
+      if ((stateData as BroadcastState).match_id) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: matchData } = await (supabase as any)
+          .from("matches").select("*").eq("id", (stateData as BroadcastState).match_id).single();
+        if (matchData) setMatch(matchData as Match);
       }
     }
   }, []);
@@ -48,23 +61,21 @@ export default function ControlPage() {
   async function saveMatch() {
     setSaving(true);
     try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const db = supabase as any;
+      const payload = {
+        home_team: match.home_team, away_team: match.away_team,
+        home_score: match.home_score, away_score: match.away_score,
+        match_time: match.match_time, status: match.status,
+        venue: match.venue, competition: match.competition,
+      };
       if (match.id) {
-        await supabase.from("matches").update({
-          home_team: match.home_team, away_team: match.away_team,
-          home_score: match.home_score, away_score: match.away_score,
-          match_time: match.match_time, status: match.status,
-          venue: match.venue, competition: match.competition,
-        }).eq("id", match.id);
+        await db.from("matches").update(payload).eq("id", match.id);
       } else {
-        const { data } = await supabase.from("matches").insert({
-          home_team: match.home_team, away_team: match.away_team,
-          home_score: match.home_score, away_score: match.away_score,
-          match_time: match.match_time, status: match.status,
-          venue: match.venue, competition: match.competition,
-        }).select().single();
+        const { data } = await db.from("matches").insert(payload).select().single();
         if (data) {
-          setMatch(data);
-          await supabase.from("broadcast_state").update({ match_id: data.id }).eq("id", "main");
+          setMatch((prev) => ({ ...prev, id: (data as Match).id }));
+          await db.from("broadcast_state").update({ match_id: (data as Match).id }).eq("id", "main");
         }
       }
     } finally {
@@ -73,24 +84,28 @@ export default function ControlPage() {
   }
 
   async function setOverlay(overlay: OverlayType) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabase as any;
     const overlayData = overlay === "lower_third"
       ? { title: lowerThirdTitle, subtitle: lowerThirdSub }
       : {};
-    await supabase.from("broadcast_state").update({
+    await db.from("broadcast_state").update({
       active_overlay: overlay,
       overlay_data: overlayData,
       is_live: overlay !== null,
-      match_id: match.id || null,
+      match_id: match.id ?? null,
     }).eq("id", "main");
     setState((prev) => prev ? { ...prev, active_overlay: overlay, is_live: overlay !== null } : prev);
   }
 
   async function adjustScore(team: "home" | "away", delta: number) {
     const field = team === "home" ? "home_score" : "away_score";
-    const newScore = Math.max(0, (team === "home" ? match.home_score : match.away_score) + delta);
+    const current = team === "home" ? match.home_score : match.away_score;
+    const newScore = Math.max(0, current + delta);
     setMatch((prev) => ({ ...prev, [field]: newScore }));
     if (match.id) {
-      await supabase.from("matches").update({ [field]: newScore }).eq("id", match.id);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase as any).from("matches").update({ [field]: newScore }).eq("id", match.id);
     }
   }
 
@@ -186,9 +201,7 @@ export default function ControlPage() {
                   className="w-10 h-10 bg-yellow-500 hover:bg-yellow-400 text-black rounded-lg text-lg font-bold transition-colors">+</button>
               </div>
             </div>
-
             <div className="text-neutral-600 text-3xl font-light">:</div>
-
             <div className="flex flex-col items-center gap-3">
               <span className="text-sm font-medium text-neutral-300 uppercase tracking-wide">
                 {match.away_team || "Away"}
@@ -217,8 +230,6 @@ export default function ControlPage() {
               Clear All
             </button>
           </div>
-
-          {/* Lower Third */}
           <div className="border border-neutral-800 rounded-lg p-4">
             <h3 className="text-xs text-neutral-500 uppercase tracking-widest mb-3">Lower Third</h3>
             <div className="flex flex-col gap-2 mb-3">
